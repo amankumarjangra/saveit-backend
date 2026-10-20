@@ -30,6 +30,7 @@ from app.extractor import (
     ContentPrivateError,
     DurationTooLongError,
     ExtractionError,
+    _get_cookie_file,
     cleanup_old_temp_files,
     download_media,
     extract_metadata,
@@ -80,14 +81,22 @@ def _error_response(code: ErrorCode, message: str, status_code: int) -> JSONResp
 @router.get("/health")
 async def health_check():
     """Health check endpoint with cookie diagnostic."""
-    cookie_env = os.getenv("YOUTUBE_COOKIES") or os.getenv("COOKIES_TEXT")
-    has_cookies = bool(cookie_env and len(cookie_env.strip()) > 10)
-    cookie_len = len(cookie_env.strip()) if cookie_env else 0
+    cookie_path = _get_cookie_file()
+    has_cookies = False
+    cookie_bytes = 0
+    if cookie_path and os.path.exists(cookie_path):
+        has_cookies = True
+        try:
+            cookie_bytes = os.path.getsize(cookie_path)
+        except Exception:
+            pass
+
     return {
         "status": "ok",
         "version": settings.api_version,
         "has_youtube_cookies": has_cookies,
-        "cookie_length": cookie_len,
+        "cookie_source": cookie_path if has_cookies else None,
+        "cookie_bytes": cookie_bytes,
     }
 
 

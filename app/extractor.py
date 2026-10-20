@@ -159,20 +159,31 @@ def _has_audio(fmt: dict) -> bool:
 
 def _get_cookie_file() -> Optional[str]:
     """Check if cookies.txt file or YOUTUBE_COOKIES env var is available."""
-    # 1. Check environment variable (useful on Render / Heroku / Cloud)
+    # 1. Check Secret Files (Render / K8s / Cloud paths)
+    secret_candidates = [
+        Path("/etc/secrets/cookies.txt"),
+        Path("/etc/secrets/saveit_cookies.txt"),
+        Path("/etc/secrets/youtube_cookies.txt"),
+    ]
+    for sc in secret_candidates:
+        if sc.exists() and sc.is_file() and sc.stat().st_size > 10:
+            return str(sc.resolve())
+
+    # 2. Check environment variable (useful on Render / Heroku / Cloud)
     env_cookies = os.getenv("YOUTUBE_COOKIES") or os.getenv("COOKIES_TEXT")
     if env_cookies and len(env_cookies.strip()) > 10:
         tmp_cookie = Path("/tmp/saveit_env_cookies.txt") if os.name != "nt" else Path("./tmp/saveit_env_cookies.txt")
         try:
             tmp_cookie.parent.mkdir(parents=True, exist_ok=True)
+            text = env_cookies.strip()
             # Handle literal \n if passed via cloud env var
-            clean_text = env_cookies.strip().replace("\\n", "\n")
+            clean_text = text.replace("\\n", "\n").replace("\\t", "\t")
             tmp_cookie.write_text(clean_text, encoding="utf-8")
             return str(tmp_cookie.resolve())
         except Exception as e:
             logger.warning(f"Could not write env cookies to file: {e}")
 
-    # 2. Check local file candidates
+    # 3. Check local file candidates
     candidates = [
         Path("cookies.txt"),
         Path(__file__).parent.parent / "cookies.txt",
