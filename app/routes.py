@@ -81,13 +81,18 @@ def _error_response(code: ErrorCode, message: str, status_code: int) -> JSONResp
 @router.get("/health")
 async def health_check():
     """Health check endpoint with cookie diagnostic."""
+    import http.cookiejar
     cookie_path = _get_cookie_file()
     has_cookies = False
     cookie_bytes = 0
+    cookie_count = 0
     if cookie_path and os.path.exists(cookie_path):
         has_cookies = True
         try:
             cookie_bytes = os.path.getsize(cookie_path)
+            cj = http.cookiejar.MozillaCookieJar(cookie_path)
+            cj.load(ignore_discard=True, ignore_expires=True)
+            cookie_count = len(list(cj))
         except Exception:
             pass
 
@@ -97,6 +102,7 @@ async def health_check():
         "has_youtube_cookies": has_cookies,
         "cookie_source": cookie_path if has_cookies else None,
         "cookie_bytes": cookie_bytes,
+        "cookie_count": cookie_count,
     }
 
 
