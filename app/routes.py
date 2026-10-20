@@ -77,10 +77,19 @@ def _error_response(code: ErrorCode, message: str, status_code: int) -> JSONResp
 # 1. Health Check
 # ──────────────────────────────────────────────
 
-@router.get("/health", response_model=HealthResponse)
+@router.get("/health")
 async def health_check():
-    """Health check endpoint."""
-    return HealthResponse(status="ok", version=settings.api_version)
+    """Health check endpoint with cookie diagnostic."""
+    cookie_env = os.getenv("YOUTUBE_COOKIES") or os.getenv("COOKIES_TEXT")
+    has_cookies = bool(cookie_env and len(cookie_env.strip()) > 10)
+    cookie_len = len(cookie_env.strip()) if cookie_env else 0
+    return {
+        "status": "ok",
+        "version": settings.api_version,
+        "has_youtube_cookies": has_cookies,
+        "cookie_length": cookie_len,
+    }
+
 
 
 # ──────────────────────────────────────────────
