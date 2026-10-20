@@ -258,15 +258,15 @@ def _build_ydl_opts() -> dict:
         "extract_flat": False,
         "skip_download": True,
         "no_color": True,
-        "socket_timeout": 15,
-        "source_address": "0.0.0.0",  # Force IPv4
+        "socket_timeout": 20,
+        "force_ipv4": True,
         "js_runtimes": {"node": {}},
         "writeinfojson": False,
         "writethumbnail": False,
         "writesubtitles": False,
         "extractor_args": {
             "youtube": {
-                "player_client": ["tv_embedded", "android", "web"]
+                "player_client": ["visionos", "android"]
             }
         },
     }
@@ -318,33 +318,40 @@ def _sync_extract_info(url: str) -> Optional[dict]:
     opts = _build_ydl_opts()
 
     if is_yt:
-        # Tier 1: YouTube without cookies using tv_embedded (bypasses datacenter BotGuard)
-        yt_opts = dict(opts)
-        yt_opts.pop("cookiefile", None)
-        yt_opts["extractor_args"] = {"youtube": {"player_client": ["tv_embedded"]}}
+        # Tier 1: YouTube without cookies using visionos + android (bypasses datacenter BotGuard)
+        tier1_opts = dict(opts)
+        tier1_opts.pop("cookiefile", None)
+        tier1_opts["extractor_args"] = {"youtube": {"player_client": ["visionos", "android"]}}
         try:
-            with yt_dlp.YoutubeDL(yt_opts) as ydl:
+            with yt_dlp.YoutubeDL(tier1_opts) as ydl:
                 return ydl.extract_info(url, download=False)
         except Exception as e1:
-            logger.warning(f"Tier 1 tv_embedded failed ({e1}), trying android client...")
+            logger.warning(f"Tier 1 (visionos/android) failed ({e1}), trying android alone...")
 
-        # Tier 2: YouTube without cookies using android
-        android_opts = dict(opts)
-        android_opts.pop("cookiefile", None)
-        android_opts["extractor_args"] = {"youtube": {"player_client": ["android"]}}
+        # Tier 2: YouTube without cookies using android standalone
+        tier2_opts = dict(opts)
+        tier2_opts.pop("cookiefile", None)
+        tier2_opts["extractor_args"] = {"youtube": {"player_client": ["android"]}}
         try:
-            with yt_dlp.YoutubeDL(android_opts) as ydl:
+            with yt_dlp.YoutubeDL(tier2_opts) as ydl:
                 return ydl.extract_info(url, download=False)
         except Exception as e2:
-            logger.warning(f"Tier 2 android failed ({e2}), trying with cookies...")
+            logger.warning(f"Tier 2 (android) failed ({e2}), checking cookies...")
 
         # Tier 3: With cookies (for private / age-restricted)
         if opts.get("cookiefile"):
             try:
-                with yt_dlp.YoutubeDL(opts) as ydl:
+                tier3_opts = dict(opts)
+                tier3_opts["extractor_args"] = {"youtube": {"player_client": ["visionos", "android", "web"]}}
+                with yt_dlp.YoutubeDL(tier3_opts) as ydl:
                     return ydl.extract_info(url, download=False)
             except Exception as e3:
                 logger.warning(f"Tier 3 cookie extraction failed: {e3}")
+
+        # If all tiers failed for YouTube, do not fall through to web client with cookies
+        raise ExtractionError(
+            "YouTube temporarily restricted video extraction from this server IP. Please try again shortly."
+        )
 
     # Standard / Instagram extraction
     try:
@@ -692,13 +699,13 @@ async def _download_single(
         "no_color": True,
         "socket_timeout": 30,
         "retries": 3,
-        "source_address": "0.0.0.0",  # Force IPv4
+        "force_ipv4": True,
         "js_runtimes": {"node": {}},
     }
     if is_yt:
         opts["extractor_args"] = {
             "youtube": {
-                "player_client": ["tv_embedded", "android"]
+                "player_client": ["visionos", "android"]
             }
         }
     else:
@@ -770,7 +777,7 @@ async def _download_and_merge(
             "no_color": True,
             "socket_timeout": 30,
             "retries": 3,
-            "source_address": "0.0.0.0",  # Force IPv4
+            "force_ipv4": True,
             "js_runtimes": {"node": {}},
         }
 
@@ -783,13 +790,13 @@ async def _download_and_merge(
             "no_color": True,
             "socket_timeout": 30,
             "retries": 3,
-            "source_address": "0.0.0.0",  # Force IPv4
+            "force_ipv4": True,
             "js_runtimes": {"node": {}},
         }
 
         if is_yt:
-            video_opts["extractor_args"] = {"youtube": {"player_client": ["tv_embedded", "android"]}}
-            audio_opts["extractor_args"] = {"youtube": {"player_client": ["tv_embedded", "android"]}}
+            video_opts["extractor_args"] = {"youtube": {"player_client": ["visionos", "android"]}}
+            audio_opts["extractor_args"] = {"youtube": {"player_client": ["visionos", "android"]}}
         else:
             cookie_path = _get_cookie_file()
             if cookie_path:
