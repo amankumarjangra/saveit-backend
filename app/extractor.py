@@ -165,7 +165,9 @@ def _get_cookie_file() -> Optional[str]:
         tmp_cookie = Path("/tmp/saveit_env_cookies.txt") if os.name != "nt" else Path("./tmp/saveit_env_cookies.txt")
         try:
             tmp_cookie.parent.mkdir(parents=True, exist_ok=True)
-            tmp_cookie.write_text(env_cookies.strip(), encoding="utf-8")
+            # Handle literal \n if passed via cloud env var
+            clean_text = env_cookies.strip().replace("\\n", "\n")
+            tmp_cookie.write_text(clean_text, encoding="utf-8")
             return str(tmp_cookie.resolve())
         except Exception as e:
             logger.warning(f"Could not write env cookies to file: {e}")
@@ -182,13 +184,11 @@ def _get_cookie_file() -> Optional[str]:
     return None
 
 
-
 def _build_ydl_opts() -> dict:
     """Build yt-dlp options for metadata extraction (no download)."""
     opts = {
         "quiet": True,
         "no_warnings": True,
-        "format": "all",
         "extract_flat": False,
         "skip_download": True,
         "no_color": True,
@@ -198,11 +198,6 @@ def _build_ydl_opts() -> dict:
         "writeinfojson": False,
         "writethumbnail": False,
         "writesubtitles": False,
-        "extractor_args": {
-            "youtube": {
-                "player_client": ["android", "ios", "mweb", "web"]
-            }
-        },
     }
     cookie_path = _get_cookie_file()
     if cookie_path:
@@ -255,13 +250,13 @@ def _sync_extract_info(url: str) -> Optional[dict]:
             return info
     except yt_dlp.utils.DownloadError as e:
         error_msg = str(e).lower()
-        # Fallback retry for YouTube bot challenges on cloud servers
-        if ("bot" in error_msg or "sign in" in error_msg) and ("youtube" in url.lower() or "youtu.be" in url.lower()):
+        # Fallback retry for YouTube bot challenges only if no cookies
+        if not _get_cookie_file() and ("bot" in error_msg or "sign in" in error_msg):
             logger.info("Bot challenge on YouTube, retrying with android/ios client fallback...")
             fallback_opts = dict(opts)
             fallback_opts["extractor_args"] = {
                 "youtube": {
-                    "player_client": ["android", "ios", "tv_embedded"]
+                    "player_client": ["android", "ios"]
                 }
             }
             try:
@@ -279,6 +274,10 @@ def _sync_extract_info(url: str) -> Optional[dict]:
             raise AgeRestrictedError("This content is age-restricted.")
         else:
             raise ExtractionError(f"Failed to extract: {e}")
+    except Exception as e:
+        logger.exception(f"yt-dlp extraction failed for {url}")
+        raise ExtractionError(f"Extraction error: {e}")
+
     except Exception as e:
         logger.exception(f"yt-dlp extraction failed for {url}")
         raise ExtractionError(f"Extraction error: {e}")
@@ -612,11 +611,6 @@ async def _download_single(
         "retries": 3,
         "source_address": "0.0.0.0",  # Force IPv4
         "js_runtimes": {"node": {}},
-        "extractor_args": {
-            "youtube": {
-                "player_client": ["android", "ios", "mweb", "web"]
-            }
-        },
     }
     cookie_path = _get_cookie_file()
     if cookie_path:
@@ -688,11 +682,6 @@ async def _download_and_merge(
             "retries": 3,
             "source_address": "0.0.0.0",  # Force IPv4
             "js_runtimes": {"node": {}},
-            "extractor_args": {
-                "youtube": {
-                    "player_client": ["android", "ios", "mweb", "web"]
-                }
-            },
         }
         if cookie_path:
             video_opts["cookiefile"] = cookie_path
@@ -708,11 +697,6 @@ async def _download_and_merge(
             "retries": 3,
             "source_address": "0.0.0.0",  # Force IPv4
             "js_runtimes": {"node": {}},
-            "extractor_args": {
-                "youtube": {
-                    "player_client": ["android", "ios", "mweb", "web"]
-                }
-            },
         }
         if cookie_path:
             audio_opts["cookiefile"] = cookie_path
