@@ -139,10 +139,25 @@ def create_app() -> FastAPI:
         )
         return JSONResponse(status_code=500, content=body.model_dump())
 
+    # ── Root Endpoint ──
+    @app.get("/")
+    async def root():
+        return {
+            "message": "SaveIt Backend API is Live & Running!",
+            "status": "healthy",
+            "version": settings.api_version,
+            "endpoints": {
+                "health": "/api/v1/health",
+                "resolve": "/api/v1/resolve",
+                "download": "/api/v1/download",
+            },
+        }
+
     # ── Routes ──
     app.include_router(router)
 
     return app
+
 
 
 # The application instance (used by uvicorn)
