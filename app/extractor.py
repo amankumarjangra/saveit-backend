@@ -259,11 +259,16 @@ def _build_ydl_opts() -> dict:
         "skip_download": True,
         "no_color": True,
         "socket_timeout": 15,
-        "source_address": "0.0.0.0",  # Force IPv4 to bypass ISP IPv6 BotGuard restrictions
+        "source_address": "0.0.0.0",  # Force IPv4
         "js_runtimes": {"node": {}},
         "writeinfojson": False,
         "writethumbnail": False,
         "writesubtitles": False,
+        "extractor_args": {
+            "youtube": {
+                "player_client": ["tv_embedded", "android", "web"]
+            }
+        },
     }
     cookie_path = _get_cookie_file()
     if cookie_path:
@@ -316,13 +321,13 @@ def _sync_extract_info(url: str) -> Optional[dict]:
             return info
     except yt_dlp.utils.DownloadError as e:
         error_msg = str(e).lower()
-        # Fallback retry for YouTube bot challenges only if no cookies
-        if not _get_cookie_file() and ("bot" in error_msg or "sign in" in error_msg):
-            logger.info("Bot challenge on YouTube, retrying with android/ios client fallback...")
+        # Fallback retry for YouTube challenges (bot guard, format restriction, reload required)
+        if any(w in error_msg for w in ["bot", "sign in", "reloaded", "not available", "unplayable"]):
+            logger.info(f"YouTube challenge encountered ({e}), retrying with android client...")
             fallback_opts = dict(opts)
             fallback_opts["extractor_args"] = {
                 "youtube": {
-                    "player_client": ["android", "ios"]
+                    "player_client": ["android"]
                 }
             }
             try:
@@ -330,7 +335,7 @@ def _sync_extract_info(url: str) -> Optional[dict]:
                     info = fallback_ydl.extract_info(url, download=False)
                     return info
             except Exception as fb_err:
-                logger.warning(f"Fallback extraction also failed: {fb_err}")
+                logger.warning(f"Android fallback also failed: {fb_err}")
 
         if "private" in error_msg or "login" in error_msg:
             raise ContentPrivateError("This content is private or requires login.")
@@ -677,6 +682,11 @@ async def _download_single(
         "retries": 3,
         "source_address": "0.0.0.0",  # Force IPv4
         "js_runtimes": {"node": {}},
+        "extractor_args": {
+            "youtube": {
+                "player_client": ["tv_embedded", "android", "web"]
+            }
+        },
     }
     cookie_path = _get_cookie_file()
     if cookie_path:
@@ -748,6 +758,11 @@ async def _download_and_merge(
             "retries": 3,
             "source_address": "0.0.0.0",  # Force IPv4
             "js_runtimes": {"node": {}},
+            "extractor_args": {
+                "youtube": {
+                    "player_client": ["tv_embedded", "android", "web"]
+                }
+            },
         }
         if cookie_path:
             video_opts["cookiefile"] = cookie_path
@@ -763,6 +778,11 @@ async def _download_and_merge(
             "retries": 3,
             "source_address": "0.0.0.0",  # Force IPv4
             "js_runtimes": {"node": {}},
+            "extractor_args": {
+                "youtube": {
+                    "player_client": ["tv_embedded", "android", "web"]
+                }
+            },
         }
         if cookie_path:
             audio_opts["cookiefile"] = cookie_path
