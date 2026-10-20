@@ -1,0 +1,49 @@
+# Python & Bytecode
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+
+# Environment & Sensitive Secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.cert
+*.pfx
+
+# Credentials & Cookies
+*cookie*
+*cookies*
+*.txt
+!requirements.txt
+*.sqlite
+*.sqlite3
+*.db
+*.log
+
+# Virtual Environments
+.venv/
+venv/
+env/
+ENV/
+
+# Temp & Cache
+tmp/
+/tmp/
+temp/
+bgutil-provider/
+
+# IDE & OS
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db

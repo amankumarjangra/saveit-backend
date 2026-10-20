@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: saveit-backend
+    env: docker
+    plan: free
+    region: oregon
+    healthCheckPath: /api/v1/health
+    envVars:
+      - key: DEBUG
+        value: "false"
+      - key: ALLOWED_ORIGINS
+        value: "*"
+      - key: RATE_LIMIT
+        value: "30/minute"
+      - key: TEMP_DIR
+        value: "/tmp/saveit"
