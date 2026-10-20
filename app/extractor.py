@@ -188,6 +188,7 @@ def _build_ydl_opts() -> dict:
     opts = {
         "quiet": True,
         "no_warnings": True,
+        "format": "all",
         "extract_flat": False,
         "skip_download": True,
         "no_color": True,
