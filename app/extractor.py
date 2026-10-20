@@ -313,30 +313,45 @@ async def extract_metadata(url: str, platform: Platform) -> ResolveResponse:
 
 
 def _sync_extract_info(url: str) -> Optional[dict]:
-    """Synchronous yt-dlp extraction (run in executor)."""
+    """Synchronous yt-dlp extraction with smart client tiers."""
+    is_yt = "youtube.com" in url or "youtu.be" in url
     opts = _build_ydl_opts()
+
+    if is_yt:
+        # Tier 1: YouTube without cookies using tv_embedded (bypasses datacenter BotGuard)
+        yt_opts = dict(opts)
+        yt_opts.pop("cookiefile", None)
+        yt_opts["extractor_args"] = {"youtube": {"player_client": ["tv_embedded"]}}
+        try:
+            with yt_dlp.YoutubeDL(yt_opts) as ydl:
+                return ydl.extract_info(url, download=False)
+        except Exception as e1:
+            logger.warning(f"Tier 1 tv_embedded failed ({e1}), trying android client...")
+
+        # Tier 2: YouTube without cookies using android
+        android_opts = dict(opts)
+        android_opts.pop("cookiefile", None)
+        android_opts["extractor_args"] = {"youtube": {"player_client": ["android"]}}
+        try:
+            with yt_dlp.YoutubeDL(android_opts) as ydl:
+                return ydl.extract_info(url, download=False)
+        except Exception as e2:
+            logger.warning(f"Tier 2 android failed ({e2}), trying with cookies...")
+
+        # Tier 3: With cookies (for private / age-restricted)
+        if opts.get("cookiefile"):
+            try:
+                with yt_dlp.YoutubeDL(opts) as ydl:
+                    return ydl.extract_info(url, download=False)
+            except Exception as e3:
+                logger.warning(f"Tier 3 cookie extraction failed: {e3}")
+
+    # Standard / Instagram extraction
     try:
         with yt_dlp.YoutubeDL(opts) as ydl:
-            info = ydl.extract_info(url, download=False)
-            return info
+            return ydl.extract_info(url, download=False)
     except yt_dlp.utils.DownloadError as e:
         error_msg = str(e).lower()
-        # Fallback retry for YouTube challenges (bot guard, format restriction, reload required)
-        if any(w in error_msg for w in ["bot", "sign in", "reloaded", "not available", "unplayable"]):
-            logger.info(f"YouTube challenge encountered ({e}), retrying with android client...")
-            fallback_opts = dict(opts)
-            fallback_opts["extractor_args"] = {
-                "youtube": {
-                    "player_client": ["android"]
-                }
-            }
-            try:
-                with yt_dlp.YoutubeDL(fallback_opts) as fallback_ydl:
-                    info = fallback_ydl.extract_info(url, download=False)
-                    return info
-            except Exception as fb_err:
-                logger.warning(f"Android fallback also failed: {fb_err}")
-
         if "private" in error_msg or "login" in error_msg:
             raise ContentPrivateError("This content is private or requires login.")
         elif "not found" in error_msg or "unavailable" in error_msg or "removed" in error_msg:
@@ -345,10 +360,6 @@ def _sync_extract_info(url: str) -> Optional[dict]:
             raise AgeRestrictedError("This content is age-restricted.")
         else:
             raise ExtractionError(f"Failed to extract: {e}")
-    except Exception as e:
-        logger.exception(f"yt-dlp extraction failed for {url}")
-        raise ExtractionError(f"Extraction error: {e}")
-
     except Exception as e:
         logger.exception(f"yt-dlp extraction failed for {url}")
         raise ExtractionError(f"Extraction error: {e}")
@@ -672,6 +683,7 @@ async def _download_single(
     loop = asyncio.get_event_loop()
 
     output_template = str(job_dir / "%(title).80s.%(ext)s")
+    is_yt = "youtube.com" in url or "youtu.be" in url
     opts = {
         "quiet": True,
         "no_warnings": True,
@@ -682,15 +694,17 @@ async def _download_single(
         "retries": 3,
         "source_address": "0.0.0.0",  # Force IPv4
         "js_runtimes": {"node": {}},
-        "extractor_args": {
-            "youtube": {
-                "player_client": ["tv_embedded", "android", "web"]
-            }
-        },
     }
-    cookie_path = _get_cookie_file()
-    if cookie_path:
-        opts["cookiefile"] = cookie_path
+    if is_yt:
+        opts["extractor_args"] = {
+            "youtube": {
+                "player_client": ["tv_embedded", "android"]
+            }
+        }
+    else:
+        cookie_path = _get_cookie_file()
+        if cookie_path:
+            opts["cookiefile"] = cookie_path
 
 
     def _do_download():
@@ -745,7 +759,7 @@ async def _download_and_merge(
         audio_path = job_dir / "audio_only.m4a"
         merged_path = job_dir / "merged_output.mp4"
 
-        cookie_path = _get_cookie_file()
+        is_yt = "youtube.com" in url or "youtu.be" in url
 
         # Download video-only stream
         video_opts = {
@@ -758,14 +772,7 @@ async def _download_and_merge(
             "retries": 3,
             "source_address": "0.0.0.0",  # Force IPv4
             "js_runtimes": {"node": {}},
-            "extractor_args": {
-                "youtube": {
-                    "player_client": ["tv_embedded", "android", "web"]
-                }
-            },
         }
-        if cookie_path:
-            video_opts["cookiefile"] = cookie_path
 
         # Download audio-only stream
         audio_opts = {
@@ -778,14 +785,16 @@ async def _download_and_merge(
             "retries": 3,
             "source_address": "0.0.0.0",  # Force IPv4
             "js_runtimes": {"node": {}},
-            "extractor_args": {
-                "youtube": {
-                    "player_client": ["tv_embedded", "android", "web"]
-                }
-            },
         }
-        if cookie_path:
-            audio_opts["cookiefile"] = cookie_path
+
+        if is_yt:
+            video_opts["extractor_args"] = {"youtube": {"player_client": ["tv_embedded", "android"]}}
+            audio_opts["extractor_args"] = {"youtube": {"player_client": ["tv_embedded", "android"]}}
+        else:
+            cookie_path = _get_cookie_file()
+            if cookie_path:
+                video_opts["cookiefile"] = cookie_path
+                audio_opts["cookiefile"] = cookie_path
 
         def _download_video():
             with yt_dlp.YoutubeDL(video_opts) as ydl:
