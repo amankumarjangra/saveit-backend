@@ -158,7 +158,19 @@ def _has_audio(fmt: dict) -> bool:
 # ──────────────────────────────────────────────
 
 def _get_cookie_file() -> Optional[str]:
-    """Check if a cookies.txt file is available."""
+    """Check if cookies.txt file or YOUTUBE_COOKIES env var is available."""
+    # 1. Check environment variable (useful on Render / Heroku / Cloud)
+    env_cookies = os.getenv("YOUTUBE_COOKIES") or os.getenv("COOKIES_TEXT")
+    if env_cookies and len(env_cookies.strip()) > 10:
+        tmp_cookie = Path("/tmp/saveit_env_cookies.txt") if os.name != "nt" else Path("./tmp/saveit_env_cookies.txt")
+        try:
+            tmp_cookie.parent.mkdir(parents=True, exist_ok=True)
+            tmp_cookie.write_text(env_cookies.strip(), encoding="utf-8")
+            return str(tmp_cookie.resolve())
+        except Exception as e:
+            logger.warning(f"Could not write env cookies to file: {e}")
+
+    # 2. Check local file candidates
     candidates = [
         Path("cookies.txt"),
         Path(__file__).parent.parent / "cookies.txt",
@@ -168,6 +180,7 @@ def _get_cookie_file() -> Optional[str]:
         if c.exists() and c.is_file() and c.stat().st_size > 0:
             return str(c.resolve())
     return None
+
 
 
 def _build_ydl_opts() -> dict:
