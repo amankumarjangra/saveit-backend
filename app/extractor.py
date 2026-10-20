@@ -197,6 +197,11 @@ def _build_ydl_opts() -> dict:
         "writeinfojson": False,
         "writethumbnail": False,
         "writesubtitles": False,
+        "extractor_args": {
+            "youtube": {
+                "player_client": ["android", "ios", "mweb", "web"]
+            }
+        },
     }
     cookie_path = _get_cookie_file()
     if cookie_path:
@@ -249,6 +254,22 @@ def _sync_extract_info(url: str) -> Optional[dict]:
             return info
     except yt_dlp.utils.DownloadError as e:
         error_msg = str(e).lower()
+        # Fallback retry for YouTube bot challenges on cloud servers
+        if ("bot" in error_msg or "sign in" in error_msg) and ("youtube" in url.lower() or "youtu.be" in url.lower()):
+            logger.info("Bot challenge on YouTube, retrying with android/ios client fallback...")
+            fallback_opts = dict(opts)
+            fallback_opts["extractor_args"] = {
+                "youtube": {
+                    "player_client": ["android", "ios", "tv_embedded"]
+                }
+            }
+            try:
+                with yt_dlp.YoutubeDL(fallback_opts) as fallback_ydl:
+                    info = fallback_ydl.extract_info(url, download=False)
+                    return info
+            except Exception as fb_err:
+                logger.warning(f"Fallback extraction also failed: {fb_err}")
+
         if "private" in error_msg or "login" in error_msg:
             raise ContentPrivateError("This content is private or requires login.")
         elif "not found" in error_msg or "unavailable" in error_msg or "removed" in error_msg:
@@ -260,6 +281,7 @@ def _sync_extract_info(url: str) -> Optional[dict]:
     except Exception as e:
         logger.exception(f"yt-dlp extraction failed for {url}")
         raise ExtractionError(f"Extraction error: {e}")
+
 
 
 def _build_single_item_response(
@@ -589,10 +611,16 @@ async def _download_single(
         "retries": 3,
         "source_address": "0.0.0.0",  # Force IPv4
         "js_runtimes": {"node": {}},
+        "extractor_args": {
+            "youtube": {
+                "player_client": ["android", "ios", "mweb", "web"]
+            }
+        },
     }
     cookie_path = _get_cookie_file()
     if cookie_path:
         opts["cookiefile"] = cookie_path
+
 
     def _do_download():
         with yt_dlp.YoutubeDL(opts) as ydl:
@@ -659,6 +687,11 @@ async def _download_and_merge(
             "retries": 3,
             "source_address": "0.0.0.0",  # Force IPv4
             "js_runtimes": {"node": {}},
+            "extractor_args": {
+                "youtube": {
+                    "player_client": ["android", "ios", "mweb", "web"]
+                }
+            },
         }
         if cookie_path:
             video_opts["cookiefile"] = cookie_path
@@ -674,6 +707,11 @@ async def _download_and_merge(
             "retries": 3,
             "source_address": "0.0.0.0",  # Force IPv4
             "js_runtimes": {"node": {}},
+            "extractor_args": {
+                "youtube": {
+                    "player_client": ["android", "ios", "mweb", "web"]
+                }
+            },
         }
         if cookie_path:
             audio_opts["cookiefile"] = cookie_path
