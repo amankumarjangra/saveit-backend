@@ -106,6 +106,41 @@ async def health_check():
     }
 
 
+@router.get("/debug")
+async def debug_check(url: str = "https://www.youtube.com/watch?v=mJ1AS_BBmiA"):
+    """Live diagnostic for cloud extraction."""
+    import yt_dlp
+    results = {}
+    cookie_path = _get_cookie_file()
+    results["cookie_path"] = cookie_path
+
+    # Test 1: tv_embedded no cookies
+    try:
+        ydl = yt_dlp.YoutubeDL({"quiet": True, "skip_download": True, "extractor_args": {"youtube": {"player_client": ["tv_embedded"]}}})
+        info = ydl.extract_info(url, download=False)
+        results["tv_embedded_nocookie"] = {"status": "ok", "formats": len(info.get("formats", []))}
+    except Exception as e:
+        results["tv_embedded_nocookie"] = {"status": "error", "err": str(e)[:150]}
+
+    # Test 2: android no cookies
+    try:
+        ydl = yt_dlp.YoutubeDL({"quiet": True, "skip_download": True, "extractor_args": {"youtube": {"player_client": ["android"]}}})
+        info = ydl.extract_info(url, download=False)
+        results["android_nocookie"] = {"status": "ok", "formats": len(info.get("formats", []))}
+    except Exception as e:
+        results["android_nocookie"] = {"status": "error", "err": str(e)[:150]}
+
+    # Test 3: tv_embedded with cookies
+    if cookie_path:
+        try:
+            ydl = yt_dlp.YoutubeDL({"quiet": True, "skip_download": True, "cookiefile": cookie_path, "extractor_args": {"youtube": {"player_client": ["tv_embedded"]}}})
+            info = ydl.extract_info(url, download=False)
+            results["tv_embedded_cookies"] = {"status": "ok", "formats": len(info.get("formats", []))}
+        except Exception as e:
+            results["tv_embedded_cookies"] = {"status": "error", "err": str(e)[:150]}
+
+    return results
+
 
 # ──────────────────────────────────────────────
 # 2. Resolve (Metadata + Formats)
